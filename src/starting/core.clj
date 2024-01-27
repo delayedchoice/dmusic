@@ -1,6 +1,8 @@
 (ns starting.core
-  #_(:require [overtone.core :as o]
-            [overtone.live]))
+  (:require ;[overtone.core :as o]
+            ;[overtone.live]
+            [overtone.sc.machinery.server.connection :as conn]
+            ))
 
 ;(o/demo (o/sin-osc))
 
@@ -10,9 +12,14 @@
 
 
 ;(o/odoc o/saw)
-
+(defonce c (conn/connect "127.0.0.1" 57110))
 (comment 
   (o/stop)
+
+(defn reset []
+ (conn/shutdown-server)
+ (conn/connect "127.0.0.1" 57110)
+ )
 
 (o/definst trem [freq 440 depth 10 rate 6 length 3]
     (* 0.3

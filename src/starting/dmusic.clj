@@ -13,34 +13,59 @@
             [overtone.sc.cgens.mix :as mix]
             [overtone.sc.cgens.line :as line]
             [overtone.sc.machinery.server.connection :as conn]
+            [overtone.music.time :as time]
+            [starting.core :as app]
+            [overtone.at-at :as at]
             ))
 (def the-synth (atom nil))
 (comment
-  (conn/connect)
+  (conn/connect "127.0.0.1" 57110 )
   (conn/shutdown-server))
+(comment
+  (app/reset))
+
+(def my-pool (at/mk-pool))
+(comment 
+  (meta #'overtone.core/now)
+  (ru/odoc srv/at)
+  )
 
 (sy/defsynth one
   "first class of https://www.youtube.com/playlist?list=PLPYzvS8A_rTZmJZjUtMG6GJ2QkLUEaY4Q."
-  [ ]
-  (let [
-        sig (-> 
-                    (u/lf-noise0:kr 12)
-                    (* 600)
-                    (+ 1000)
-                    (u/sin-osc 0.3)
-                    #_(u/pan2 0))
-        ]
+  [note                {:default 60   :min 0   :max 127   :step 1}
+   dur                 {:default 1.0  :min 0.0 :max 10.0   :step 0.1}
+   fade                {:default true}
+   ]
+  (let [env (u/env-gen (env/adsr 0 0 0.9 4))
+        fade-target (if fade 0 1)
+        sig (as-> note $
+              (u/midicps $) 
+              (- $ (* 1 (u/sin-osc 0.5) )) ;vib
+              (+ (u/saw $) (u/sin-osc $)) 
+              (* $ env) ;adsr
+              (u/softclip $)
+              ;(* $ (u/line 1 fade-target dur :action u/FREE )) ;fade
+              (u/lpf $ 800) ;low pass filter
+              (* $ 0.5)
+              [$  $])]
     (u/out 0 sig)))
 
-;attack: 0.005,
-;decay: 0.1,
-;release: 1,
-;sustain: 0.9,
+(comment
+  (srv/at (+ (time/now) (* 1000 4)) (one))
+  (one :wait 4))
+
+(defn play-phrase [phrase]
+  (let [phrase-with-waits (map #(vector (first %1) (second %1) %2 %3) phrase (into [0] (map second phrase)) (into (map true? phrase) [true]) ) ] 
+    (doseq [[note dur wait] phrase-with-waits]
+      (srv/at (+ (time/now) (* 1000 wait)) (one :note note :dur dur))
+     )))
+
+(play-phrase [[60 2] [67 4]])
 ;siren
 ;env (overtone/env-gen (overtone/adsr attack decay sustain release level curve)
 ;                              :gate gate
 ;                              :action overtone/FREE)]
-
+( #(true? true) )
 (comment
   (sy/demo 8 (let [dur 4
                   env (abs (u/lf-saw :freq (/ 1 dur)  ))]
@@ -50,19 +75,13 @@
 (comment
   (sy/demo 4
           (let [env (u/env-gen (env/adsr 0 0 0.9 1)
-                               :gate 1
-                               :action u/FREE)
-                vib (u/sin-osc:kr 0.5)] 
-            (as-> 60 $
-              (u/midicps $) 
-              (- $ (* 1 (u/sin-osc 0.5) ))
-              (+ (u/saw $) (u/sin-osc $)) 
-              (* $ env)
-              (u/softclip $)
-              (* $ (u/line 1 0 4 ))
-              ( u/lpf $ 800)
-              [$  $]))
-          ))
+                              ; :gate 1
+                              ; :action u/FREE
+                               )
+                ] 
+
+          )))
+
 (comment
   (sy/demo 4 (let [dur 4
                   env (u/lf-saw :freq (/ 1 dur) :iphase -2 :mul 0.5 :add 1)]
@@ -81,11 +100,6 @@
                                      (- (clojure.core/rand 2) 1))
                             (range sines)))
                   (/ 1 sines)))))
-
-(comment 
-  (meta #'overtone.core/shutdown-server)
-  (ru/odoc u/line)
-  )
 
 
 (defn restart []
