@@ -34,17 +34,18 @@
   "first class of https://www.youtube.com/playlist?list=PLPYzvS8A_rTZmJZjUtMG6GJ2QkLUEaY4Q."
   [note                {:default 60   :min 0   :max 127   :step 1}
    dur                 {:default 1.0  :min 0.0 :max 10.0   :step 0.1}
-   fade                {:default true}
+   fade                {:default 1 :min 0 :max 1 :step 1}
    ]
   (let [env (u/env-gen (env/adsr 0 0 0.9 4))
         fade-target (if fade 0 1)
+        _ (println-str "fade-target: " fade-target)
         sig (as-> note $
               (u/midicps $) 
               (- $ (* 1 (u/sin-osc 0.5) )) ;vib
               (+ (u/saw $) (u/sin-osc $)) 
               (* $ env) ;adsr
               (u/softclip $)
-              ;(* $ (u/line 1 fade-target dur :action u/FREE )) ;fade
+              (* $ (u/line 1 fade-target (+ 1.5 dur) :action u/FREE )) ;fade
               (u/lpf $ 800) ;low pass filter
               (* $ 0.5)
               [$  $])]
@@ -55,12 +56,12 @@
   (one :wait 4))
 
 (defn play-phrase [phrase]
-  (let [phrase-with-waits (map #(vector (first %1) (second %1) %2 %3) phrase (into [0] (map second phrase)) (into (map true? phrase) [true]) ) ] 
-    (doseq [[note dur wait] phrase-with-waits]
-      (srv/at (+ (time/now) (* 1000 wait)) (one :note note :dur dur))
+  (let [phrase-with-waits (map #(vector (first %1) (second %1) %2 %3) phrase (into [0] (map second phrase)) (into (map #(* 0 (first %) ) phrase) [1]) ) ] 
+    (doseq [[note dur wait fade] phrase-with-waits]
+      (srv/at (+ (time/now) (* 1000 wait)) (one :note note :dur dur :fade fade))
      )))
 
-(play-phrase [[60 2] [67 4]])
+(play-phrase [[62 1] [64 4]])
 ;siren
 ;env (overtone/env-gen (overtone/adsr attack decay sustain release level curve)
 ;                              :gate gate
