@@ -5,40 +5,69 @@
             [overtone.sc.server :as srv]
             [overtone.sc.synth :as sy]
             [overtone.sc.envelope :as env]
+            [overtone.sc.bus :as bus]
             [overtone.sc.node :as n]
             [overtone.repl.ugens :as ru]
             [overtone.algo.scaling :as scale]
-            [overtone.core]
+            ;[overtone.core]
             [overtone.inst.synth :as toy]
             [overtone.sc.cgens.mix :as mix]
             [overtone.sc.cgens.line :as line]
             [overtone.sc.machinery.server.connection :as conn]
             [overtone.music.time :as time]
             [starting.core :as app]
-            [overtone.at-at :as at]
             ))
-(def the-synth (atom nil))
-(comment
-  (conn/connect "127.0.0.1" 57110 )
-  (conn/shutdown-server))
-(comment
-  (app/reset))
 
-(def my-pool (at/mk-pool))
 (comment 
-  (meta #'overtone.core/now)
-  (ru/odoc srv/at)
+  (meta #'overtone.core/synth)
+  (ru/odoc u/comb-n)
+)
+
+(def G3 67)
+(def B3 71)
+(def D4 74)
+(def E4 76)
+(def G4 79)
+(def C5 84)
+(def D5 86)
+(def E5 88)
+(def G5 91)
+(def A5 93)
+
+(defonce echo-bus (bus/audio-bus))
+
+(defonce main-group (n/group "get-on-the-bus echo"))
+(defonce input-group (n/group "input-group" :head main-group))
+(defonce effect-group (n/group "effect-group" :after input-group))
+
+(comment 
+  (meta #'overtone.core/audio-bus)
+  (ru/odoc u/comb-n)
   )
+
+(sy/defsynth echo
+  ""
+  [
+   dur      1.0
+   input-bus  0  
+   output-bus 0
+   ]
+  (let [
+        sig (as-> (u/in:ar input-bus) $
+              (+ $ (u/comb-n:ar $ 6 6 600 ))
+              (* $ 0.5)
+              )]
+    (u/out output-bus sig)))
 
 (sy/defsynth one
   "first class of https://www.youtube.com/playlist?list=PLPYzvS8A_rTZmJZjUtMG6GJ2QkLUEaY4Q."
-  [note                {:default 60   :min 0   :max 127   :step 1}
-   dur                 {:default 1.0  :min 0.0 :max 10.0   :step 0.1}
-   fade                {:default 1 :min 0 :max 1 :step 1}
+  [note     84
+   dur      1.0
+   fade     1
+   output-bus  0  
    ]
-  (let [env (u/env-gen (env/adsr 0 0 0.9 4))
+  (let [env (u/env-gen (env/adsr 2 0 0.9 4))
         fade-target (if fade 0 1)
-        _ (println-str "fade-target: " fade-target)
         sig (as-> note $
               (u/midicps $) 
               (- $ (* 1 (u/sin-osc 0.5) )) ;vib
@@ -47,78 +76,72 @@
               (u/softclip $)
               (* $ (u/line 1 fade-target (+ 1.5 dur) :action u/FREE )) ;fade
               (u/lpf $ 800) ;low pass filter
+              (+ $ (u/comb-l:ar $ ))
               (* $ 0.5)
-              [$  $])]
-    (u/out 0 sig)))
-
+              )]
+    (u/out output-bus sig)))
+(one :note C5 )
 (comment
   (srv/at (+ (time/now) (* 1000 4)) (one))
-  (one :wait 4))
+  (one :wait 4)
+  (one))
 
-(defn play-phrase [phrase]
-  (let [phrase-with-waits (map #(vector (first %1) (second %1) %2 %3) phrase (into [0] (map second phrase)) (into (map #(* 0 (first %) ) phrase) [1]) ) ] 
+(defn play-phrase [phrase offset channel]
+  (let [factor 1/8
+        phrase-with-waits (map #(vector (first %1) (second %1) %2 %3) 
+                                  (map #(vector (first %1) (* factor (second %1))) phrase) 
+                                  ;phrase
+                                  (into [0] (reductions + (map second phrase))) 
+                                  (into (map #(* 0 (first %) ) phrase) [1]) ) ] 
     (doseq [[note dur wait fade] phrase-with-waits]
-      (srv/at (+ (time/now) (* 1000 wait)) (one :note note :dur dur :fade fade))
+      (let [_ (print-str "note: " note " dur: " dur " :wait " wait " :fade " fade)]
+       (srv/at (+ (time/now) (* 1000 factor (+ wait offset))) 
+               (one [:tail input-group] 
+                    :note note 
+                    :dur dur 
+                    :fade fade 
+                    :output-bus channel)))
      )))
-
-(play-phrase [[62 1] [64 4]])
-;siren
-;env (overtone/env-gen (overtone/adsr attack decay sustain release level curve)
-;                              :gate gate
-;                              :action overtone/FREE)]
-( #(true? true) )
 (comment
-  (sy/demo 8 (let [dur 4
-                  env (abs (u/lf-saw :freq (/ 1 dur)  ))]
-              ;(u/line:kr 0 1 dur :action u/FREE)
-              (* env (u/saw 220)))))
+  ;this is the tune
+  (echo [:tail effect-group] :dur 1 :input-bus echo-bus  :ouput-bus 0)
+  (play-phrase [[D4 16] [E4 8]] 80 echo-bus )
+  (play-phrase [[B3 8] [G3 8] ] 186  echo-bus)
+  (play-phrase [[G4 8] ] 376 echo-bus)
 
-(comment
-  (sy/demo 4
-          (let [env (u/env-gen (env/adsr 0 0 0.9 1)
-                              ; :gate 1
-                              ; :action u/FREE
-                               )
-                ] 
-
-          )))
-
-(comment
-  (sy/demo 4 (let [dur 4
-                  env (u/lf-saw :freq (/ 1 dur) :iphase -2 :mul 0.5 :add 1)]
-              (u/line:kr 0 1 dur :action u/FREE)
-              (* 0.1 env (u/saw 220)))))
-
-(comment 
-  (sy/demo 2 (toy/ping)))
-
-(comment
-  (sy/demo 20 (let [sines 5
-                   speed 6]
-               (* 10 (mix/mix
-                       (map #(u/pan2 (* (u/sin-osc (* % 100))
-                                        (max 0 (+ (u/lf-noise1:kr speed) (u/line:kr 1 -1 20))))
-                                     (- (clojure.core/rand 2) 1))
-                            (range sines)))
-                  (/ 1 sines)))))
+  (play-phrase [[C5 8] [D5 16]] 0 echo-bus)
+  (play-phrase [[E4 8] ] 96 echo-bus)
+  (play-phrase [[G4 8] ] 184 echo-bus)
+  (play-phrase [[E5 6][G5 6][A5 6][G5 14]] 304 echo-bus)
 
 
-(defn restart []
-  (do 
-    (n/kill @the-synth)
-    (reset! the-synth (one))))
-
-(comment 
-  (restart)
-  (reset! the-synth (hello-world))
-  (n/kill @the-synth)
-  )
-
+ )
 (comment 
   (srv/stop)
-  )
+)
+;/ Trigger D4 after 5 measures and hold for 1 full measure + two 1/4 notes
+;  rightSynth.triggerAttackRelease('D4', '1:2', '+5:0');
+;  // Switch to E4 after one more measure
+;  rightSynth.setNote('E4', '+6:0');
+;
+;  // Trigger B3 after 11 measures + two 1/4 notes + two 1/16 notes. Hold for one measure
+;  rightSynth.triggerAttackRelease('B3', '1m', '+11:2:2');
+;  // Switch to G3 after a 1/2 note more
+;  rightSynth.setNote('G3', '+12:0:2');
+;se
+;  // Trigger G4 after 23 measures + two 1/4 notes. Hold for a half note.
+;  rightSynth.triggerAttackRelease('G4', '0:2', '+23:2');
+;-----------------------------------------------------
+;  leftSynth.triggerAttackRelease('C5', '1:2', time);
+;  leftSynth.setNote('D5', '+0:2');
+;
+;  leftSynth.triggerAttackRelease('E4', '0:2', '+6:0');
+;
+;  leftSynth.triggerAttackRelease('G4', '0:2', '+11:2');
+;
+;  leftSynth.triggerAttackRelease('E5', '2:0', '+19:0');
+;  leftSynth.setNote('G5', '+19:1:2');
+;  leftSynth.setNote('A5', '+19:3:0');
+;  leftSynth.setNote('G5', '+19:4:2');
 
-(comment 
-  (meta #'overtone.core/mix)
-  (ru/odoc u/mul-add)
-  )
+
