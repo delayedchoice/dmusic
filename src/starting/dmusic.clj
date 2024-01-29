@@ -34,11 +34,14 @@
 (def G5 91)
 (def A5 93)
 
-(defonce echo-bus (bus/audio-bus))
+(defonce right-echo-bus (bus/audio-bus))
+(defonce left-echo-bus (bus/audio-bus))
 
 (defonce main-group (n/group "get-on-the-bus echo"))
-(defonce input-group (n/group "input-group" :head main-group))
-(defonce effect-group (n/group "effect-group" :after input-group))
+(defonce right-input-group (n/group "right-input-group" :head main-group))
+(defonce left-input-group (n/group "left-input-group" :head main-group))
+(defonce right-effect-group (n/group "right-effect-group" :after right-input-group))
+(defonce left-effect-group (n/group "left-effect-group" :after left-input-group))
 
 (comment 
   (meta #'overtone.core/audio-bus)
@@ -86,7 +89,7 @@
   (one :wait 4)
   (one))
 
-(defn play-phrase [phrase offset channel]
+(defn play-phrase [phrase offset channel input-group]
   (let [factor 1/8
         phrase-with-waits (map #(vector (first %1) (second %1) %2 %3) 
                                   (map #(vector (first %1) (* factor (second %1))) phrase) 
@@ -104,14 +107,15 @@
      )))
 (comment
   ;this is the tune
-  (echo [:tail effect-group] :dur 1 :input-bus echo-bus  :ouput-bus 0)
-  (play-phrase [[D4 16] [E4 8]] 80 echo-bus )
-  (play-phrase [[B3 8] [G3 8] ] 186  echo-bus)
-  (play-phrase [[G4 8] ] 376 echo-bus)
+  (echo [:tail right-effect-group] :dur 1 :input-bus right-echo-bus  :ouput-bus 1)
+  (echo [:tail left-effect-group] :dur 1 :input-bus left-echo-bus  :ouput-bus 0)
+  (play-phrase [[D4 16] [E4 8]] 80 right-echo-bus )
+  (play-phrase [[B3 8] [G3 8] ] 186  right-echo-bus)
+  (play-phrase [[G4 8] ] 376 right-echo-bus)
 
-  (play-phrase [[C5 8] [D5 16]] 0 echo-bus)
-  (play-phrase [[E4 8] ] 96 echo-bus)
-  (play-phrase [[G4 8] ] 184 echo-bus)
+  (play-phrase [[C5 8] [D5 16]] 0 left-echo-bus)
+  (play-phrase [[E4 8] ] 96 left-echo-bus)
+  (play-phrase [[G4 8] ] 184 left-echo-bus)
   (play-phrase [[E5 6][G5 6][A5 6][G5 14]] 304 echo-bus)
 
 
