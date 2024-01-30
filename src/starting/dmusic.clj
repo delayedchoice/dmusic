@@ -4,24 +4,12 @@
   (:require [overtone.sc.ugens :as u]
             [overtone.sc.server :as srv]
             [overtone.sc.synth :as sy]
-            [overtone.sc.envelope :as env]
+            [overtone.sc.envelope :as envel]
             [overtone.sc.bus :as bus]
             [overtone.sc.node :as n]
             [overtone.repl.ugens :as ru]
-            [overtone.algo.scaling :as scale]
-            ;[overtone.core]
-            [overtone.inst.synth :as toy]
-            [overtone.sc.cgens.mix :as mix]
-            [overtone.sc.cgens.line :as line]
-            [overtone.sc.machinery.server.connection :as conn]
             [overtone.music.time :as time]
-            [starting.core :as app]
             ))
-
-(comment 
-  (meta #'overtone.core/synth)
-  (ru/odoc u/comb-n)
-)
 
 (def G3 67)
 (def B3 71)
@@ -37,16 +25,11 @@
 (defonce right-echo-bus (bus/audio-bus))
 (defonce left-echo-bus (bus/audio-bus))
 
-(defonce main-group (n/group "get-on-the-bus echo"))
+(defonce main-group (n/group "echo"))
 (defonce right-input-group (n/group "right-input-group" :head main-group))
 (defonce left-input-group (n/group "left-input-group" :head main-group))
 (defonce right-effect-group (n/group "right-effect-group" :after right-input-group))
 (defonce left-effect-group (n/group "left-effect-group" :after left-input-group))
-
-(comment 
-  (meta #'overtone.core/audio-bus)
-  (ru/odoc u/comb-n)
-  )
 
 (sy/defsynth echo
   ""
@@ -62,90 +45,76 @@
               )]
     (u/out output-bus sig)))
 
-(sy/defsynth one
+(comment 
+  (meta #'overtone.core/synth)
+  (ru/odoc u/free-verb2)
+)
+
+(sy/defsynth tone
   "first class of https://www.youtube.com/playlist?list=PLPYzvS8A_rTZmJZjUtMG6GJ2QkLUEaY4Q."
-  [note     84
-   dur      1.0
-   fade     1
+  [note        60
+   scaled-duration  1.0
    output-bus  0  
+   gate        1
    ]
-  (let [env (u/env-gen (env/adsr 2 0 0.9 4))
-        fade-target (if fade 0 1)
+  (let [envl  (u/env-gen:ar
+               (envel/envelope [0.1 1 1 0.001 0]
+                               [0.2 scaled-duration 7 1]
+                               [1 1 :exponential 1])
+               :action u/FREE)
+         ;(u/env-gen (envel/adsr 2 0 0.9 4) :gate gate :action u/FREE)
+        ;fade-target (if fade 0 1)
         sig (as-> note $
               (u/midicps $) 
               (- $ (* 1 (u/sin-osc 0.5) )) ;vib
-              (+ (u/saw $) (u/sin-osc $)) 
-              (* $ env) ;adsr
-              (u/softclip $)
-              (* $ (u/line 1 fade-target (+ 1.5 dur) :action u/FREE )) ;fade
+              (+ (u/var-saw $ :width 0.9) #_(u/sin-osc $)) 
+              (* $ envl) ;adsr
               (u/lpf $ 800) ;low pass filter
-              (+ $ (u/comb-l:ar $ ))
+              (u/free-verb $ :mix 0.4 :room 1)
+              (u/softclip $)
               (* $ 0.5)
               )]
     (u/out output-bus sig)))
-(one :note C5 )
-(comment
-  (srv/at (+ (time/now) (* 1000 4)) (one))
-  (one :wait 4)
-  (one))
 
-(defn play-phrase [phrase offset channel input-group]
-  (let [factor 1/8
-        phrase-with-waits (map #(vector (first %1) (second %1) %2 %3) 
-                                  (map #(vector (first %1) (* factor (second %1))) phrase) 
-                                  ;phrase
-                                  (into [0] (reductions + (map second phrase))) 
-                                  (into (map #(* 0 (first %) ) phrase) [1]) ) ] 
-    (doseq [[note dur wait fade] phrase-with-waits]
-      (let [_ (print-str "note: " note " dur: " dur " :wait " wait " :fade " fade)]
-       (srv/at (+ (time/now) (* 1000 factor (+ wait offset))) 
-               (one [:tail input-group] 
-                    :note note 
-                    :dur dur 
-                    :fade fade 
-                    :output-bus channel)))
-     )))
+(defn play-phrase [phrase offset channel input-group time-factor]
+  (let [
+        phrase-with-waits (map #(vector (first %1) %2 ) 
+                                  phrase
+                                  (into [0] (reductions + (map second phrase))) ;offsets?
+                                  ) 
+        total-duration (reduce + (map second phrase))
+        first-note (-> phrase first first)
+        scaled-first-note (- first-note 12)
+        the-synth (tone [:tail input-group] 
+                        :note scaled-first-note 
+                        :scaled-duration (* time-factor total-duration) 
+                        :output-bus channel)
+        ] 
+    (doseq [[note wait] (rest phrase-with-waits)]
+       (srv/at (+ (time/now) (* 1000 time-factor (+ wait offset))) 
+               (n/ctl the-synth :note (- note 12) )))))
+
+(defn schedule-phrase [phrase offset channel input-group]
+  (let [time-factor 1/8] 
+    (srv/at (+ (time/now) (* 1000 time-factor offset)) 
+      (play-phrase phrase offset channel input-group time-factor ))))
+
 (comment
   ;this is the tune
-  (echo [:tail right-effect-group] :dur 1 :input-bus right-echo-bus  :ouput-bus 1)
-  (echo [:tail left-effect-group] :dur 1 :input-bus left-echo-bus  :ouput-bus 0)
-  (play-phrase [[D4 16] [E4 8]] 80 right-echo-bus )
-  (play-phrase [[B3 8] [G3 8] ] 186  right-echo-bus)
-  (play-phrase [[G4 8] ] 376 right-echo-bus)
+  (doall
+   (echo [:tail right-effect-group] :dur 1 :input-bus right-echo-bus  :output-bus 1)
+   (echo [:tail left-effect-group] :dur 1 :input-bus left-echo-bus  :output-bus 0)
+   (schedule-phrase [[D4 16] [E4 8]] 80 right-echo-bus right-input-group)
+   (schedule-phrase [[B3 8] [G3 8] ] 186  right-echo-bus right-input-group)
+   (schedule-phrase [[G4 8] ] 376 right-echo-bus right-input-group)
 
-  (play-phrase [[C5 8] [D5 16]] 0 left-echo-bus)
-  (play-phrase [[E4 8] ] 96 left-echo-bus)
-  (play-phrase [[G4 8] ] 184 left-echo-bus)
-  (play-phrase [[E5 6][G5 6][A5 6][G5 14]] 304 echo-bus)
+   (schedule-phrase [[C5 8] [D5 16]] 0 left-echo-bus left-input-group)
+   (schedule-phrase [[E4 8] ] 96 left-echo-bus left-input-group)
+   (schedule-phrase [[G4 8] ] 184 left-echo-bus left-input-group)
+   (schedule-phrase [[E5 6][G5 6][A5 6][G5 14]] 304 left-echo-bus left-input-group)
+   ) )
 
-
- )
 (comment 
   (srv/stop)
 )
-;/ Trigger D4 after 5 measures and hold for 1 full measure + two 1/4 notes
-;  rightSynth.triggerAttackRelease('D4', '1:2', '+5:0');
-;  // Switch to E4 after one more measure
-;  rightSynth.setNote('E4', '+6:0');
-;
-;  // Trigger B3 after 11 measures + two 1/4 notes + two 1/16 notes. Hold for one measure
-;  rightSynth.triggerAttackRelease('B3', '1m', '+11:2:2');
-;  // Switch to G3 after a 1/2 note more
-;  rightSynth.setNote('G3', '+12:0:2');
-;se
-;  // Trigger G4 after 23 measures + two 1/4 notes. Hold for a half note.
-;  rightSynth.triggerAttackRelease('G4', '0:2', '+23:2');
-;-----------------------------------------------------
-;  leftSynth.triggerAttackRelease('C5', '1:2', time);
-;  leftSynth.setNote('D5', '+0:2');
-;
-;  leftSynth.triggerAttackRelease('E4', '0:2', '+6:0');
-;
-;  leftSynth.triggerAttackRelease('G4', '0:2', '+11:2');
-;
-;  leftSynth.triggerAttackRelease('E5', '2:0', '+19:0');
-;  leftSynth.setNote('G5', '+19:1:2');
-;  leftSynth.setNote('A5', '+19:3:0');
-;  leftSynth.setNote('G5', '+19:4:2');
-
 

@@ -20,7 +20,8 @@
  (conn/shutdown-server)
  (conn/connect "127.0.0.1" 57110)
  )
-
+(comment 
+  (reset))
 (o/definst trem [freq 440 depth 10 rate 6 length 3]
     (* 0.3
        (o/line:kr 0 1 length o/FREE)

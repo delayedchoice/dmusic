@@ -4,7 +4,7 @@
   (:require 
     
     [clojure.test :as test]
-    [starting.dmusic :as :dmusic] 
+    [starting.dmusic :as d] 
     [overtone.sc.ugens :as u]
             [overtone.sc.server :as srv]
             [overtone.sc.synth :as sy]
@@ -32,9 +32,44 @@
   (ru/odoc u/comb-n)
 )
 
+(def the-node (atom (one :note (- C5 12) :output-bus 1 :scaled-duration 10 )))
+
+(n/ctl @the-node :note G3)
 
 (comment
-  (dmusic/play-phrase  [[dmusic/E5 6][dmusic/G5 6][dmusic/A5 6] [dmusic/G5 14]] 0 dmusic/echo-bus)
-  (dmusic/echo [:tail dmusic/effect-group] :dur 1 :input-bus dmusic/echo-bus  :ouput-bus 0)
+  (srv/at (+ (time/now) (* 1000 4)) (one))
+  (one :wait 4)
+  (one))
+
+
+(comment
+  (d/play-phrase  [[d/E5 6][d/G5 6][d/A5 6] [d/G5 14]] 0 d/echo-bus)
+  (d/echo [:tail d/effect-group] :dur 1 :input-bus d/echo-bus  :ouput-bus 0)
   ;(play-phrase [[B3 8] [G3 8] ] 0 10)
   )
+;/ Trigger D4 after 5 measures and hold for 1 full measure + two 1/4 notes
+;  rightSynth.triggerAttackRelease('D4', '1:2', '+5:0');
+;  // Switch to E4 after one more measure
+;  rightSynth.setNote('E4', '+6:0');
+;
+;  // Trigger B3 after 11 measures + two 1/4 notes + two 1/16 notes. Hold for one measure
+;  rightSynth.triggerAttackRelease('B3', '1m', '+11:2:2');
+;  // Switch to G3 after a 1/2 note more
+;  rightSynth.setNote('G3', '+12:0:2');
+;se
+;  // Trigger G4 after 23 measures + two 1/4 notes. Hold for a half note.
+;  rightSynth.triggerAttackRelease('G4', '0:2', '+23:2');
+;-----------------------------------------------------
+;  leftSynth.triggerAttackRelease('C5', '1:2', time);
+;  leftSynth.setNote('D5', '+0:2');
+;
+;  leftSynth.triggerAttackRelease('E4', '0:2', '+6:0');
+;
+;  leftSynth.triggerAttackRelease('G4', '0:2', '+11:2');
+;
+;  leftSynth.triggerAttackRelease('E5', '2:0', '+19:0');
+;  leftSynth.setNote('G5', '+19:1:2');
+;  leftSynth.setNote('A5', '+19:3:0');
+;  leftSynth.setNote('G5', '+19:4:2');
+
+
