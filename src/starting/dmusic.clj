@@ -51,46 +51,45 @@
 )
 
 (sy/defsynth tone
-  "first class of https://www.youtube.com/playlist?list=PLPYzvS8A_rTZmJZjUtMG6GJ2QkLUEaY4Q."
-  [note        60
+  "i'm just a tone"
+  [note             60
    scaled-duration  1.0
-   output-bus  0  
-   gate        1
+   output-bus       0  
+   gate             1
    ]
   (let [envl  (u/env-gen:ar
                (envel/envelope [0.1 1 1 0.001 0]
-                               [0.2 scaled-duration 7 1]
-                               [1 1 :exponential 1])
+                               [0.2 scaled-duration 5 1]
+                               [1 1 -10 1])
                :action u/FREE)
-         ;(u/env-gen (envel/adsr 2 0 0.9 4) :gate gate :action u/FREE)
-        ;fade-target (if fade 0 1)
+
         sig (as-> note $
               (u/midicps $) 
-              (- $ (* 1 (u/sin-osc 0.5) )) ;vib
-              (+ (u/var-saw $ :width 0.9) #_(u/sin-osc $)) 
+              (- $ (* 1 (u/sin-osc:kr 0.5) )) ;vib
+              (+ (u/var-saw $ :width 0.9) (u/sin-osc $)) 
               (* $ envl) ;adsr
+              (u/free-verb $ :mix 0.4 :room 0.7)
               (u/lpf $ 800) ;low pass filter
-              (u/free-verb $ :mix 0.4 :room 1)
               (u/softclip $)
-              (* $ 0.5)
+              (* $ 0.4)
               )]
     (u/out output-bus sig)))
 
 (defn play-phrase [phrase offset channel input-group time-factor]
   (let [
-        phrase-with-waits (map #(vector (first %1) %2 ) 
-                                  phrase
-                                  (into [0] (reductions + (map second phrase))) ;offsets?
-                                  ) 
-        total-duration (reduce + (map second phrase))
         first-note (-> phrase first first)
         scaled-first-note (- first-note 12)
+        total-duration (reduce + (map second phrase))
+        continuations (rest phrase)
+        continuations-with-waits (map #(vector (first %1) %2 ) 
+                                       continuations
+                                       (reductions + (map second phrase))) ;offsets?
         the-synth (tone [:tail input-group] 
                         :note scaled-first-note 
                         :scaled-duration (* time-factor total-duration) 
                         :output-bus channel)
         ] 
-    (doseq [[note wait] (rest phrase-with-waits)]
+    (doseq [[note wait] continuations-with-waits]
        (srv/at (+ (time/now) (* 1000 time-factor (+ wait offset))) 
                (n/ctl the-synth :note (- note 12) )))))
 
@@ -117,4 +116,3 @@
 (comment 
   (srv/stop)
 )
-
