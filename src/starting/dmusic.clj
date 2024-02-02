@@ -28,74 +28,19 @@
 (def G5 91)
 (def A5 93)
 
-;(defonce right-echo-bus (bus/audio-bus))
-;(defonce left-echo-bus (bus/audio-bus))
-;
-;(defonce main-group (n/group "echo"))
-;(defonce right-input-group (n/group "right-input-group" :head main-group))
-;(defonce left-input-group (n/group "left-input-group" :head main-group))
-;(defonce right-effect-group (n/group "right-effect-group" :after right-input-group))
-;(defonce left-effect-group (n/group "left-effect-group" :after left-input-group))
-
-;(n/node-active? nil)
-;(bus/bus? nil)
-(def server-resources (atom {}))
-;(pp/pprint left-input-group )
-;(n/node-status main-group)
-
-(defn get-new-audio-bus [old-bus]
-  (bus/free-bus old-bus)
-  (bus/audio-bus))
-
-(defn get-new-group [old-group nm loc parent]
-  (n/node-free old-group)
-  (if (keyword? loc)
-    (n/group nm loc parent) 
-    (n/group nm)))
-
-(defn init []
-  (do
-    (swap! server-resources assoc :right-echo-bus (bus/audio-bus))
-    (swap! server-resources assoc :left-echo-bus (bus/audio-bus))
-    (swap! server-resources assoc :main-group (n/group "echo"))
-    (swap! server-resources assoc :right-input-group (n/group "right-input-group" :head (@server-resources :main-group)))                        
-    (swap! server-resources assoc :left-input-group (n/group "left-input-group" :head (@server-resources :main-group)))
-    (swap! server-resources assoc :right-effect-group (n/group "right-effect-group" :after (@server-resources :right-input-group)))
-    (swap! server-resources assoc :left-effect-group (n/group "left-effect-group" :after (@server-resources :left-input-group)))))
-;RecordBuf.ar(sig, b, recLevel: 1, preLevel: 0.5, loop: 1); 
-;sig = PlayBuf.ar(1, b, BufRateScale.kr(b), loop: 1) * 0.25 ! 2;
-;(init)
 (sy/defsynth echo
-  "RecordBuf.ar(sig, b, recLevel: 1, preLevel: 0.5, loop: 1); 
-  sig = PlayBuf.ar(1, b, BufRateScale.kr(b), loop: 1) * 0.25 ! 2;
-  "
+  " "
   [
-   dur      1.0
+   dur        1.0
    input-bus  0  
    output-bus 0
-   factor 1/8
+   factor     1/8
    ]
-  (let [sample-rate (info/server-sample-rate)
-        b (buf/buffer (* sample-rate  1))
-        phs (u/lf-saw :freq (/ 1 (* 5 (:duration b))) :iphase 1)
-        writ (u/play-buf:ar :num-channels 1 
-                              :bufnum b 
-                              :start-pos 0 
-                              :loop 1 
-                              ;;:loop 1 
-                              ;; :trigger 1
-                              )
-        sig (as-> (u/in:ar input-bus) $
+  (let [sig (as-> (u/in:ar input-bus) $
               (+ $ (u/comb-n:ar $ 6 6 (* 16 37 factor) ))
-              ;(u/buf-rd:ar :num-channels 1 :bufnum b :phase phs)
               (* $ 0.5)
               )]
     (u/out output-bus sig)))
-
-(comment 
-  (meta #'overtone.core/group)
-  (ru/odoc u/buf-dur)
-  )
 
 (sy/defsynth tone
   "i'm just a tone"
@@ -106,7 +51,7 @@
    ]
   (let [envl  (u/env-gen:ar
                 (envel/envelope [0.1 1 1 0.001 0]
-                                [0.2 scaled-duration 5 1]
+                                [0.2 scaled-duration 20 1]
                                 [1 1 -10 1])
                 :action u/FREE)
 
@@ -121,7 +66,7 @@
               (* $ 0.4)
               )]
     (u/out output-bus sig)))
-
+(tone)
 (defn play-phrase [phrase offset channel input-group time-factor]
   (let [
         first-note (-> phrase first first)
@@ -140,58 +85,13 @@
       (srv/at (+ (time/now) (* 1000 time-factor (+ wait offset))) 
               (n/ctl the-synth :note (- note 12) )))))
 
-;(defn schedule-phrase [phrase offset channel input-group]
-;  (let [time-factor 1/8] 
-;    (srv/at (+ (time/now) (* 1000 time-factor offset)) 
-;            (play-phrase phrase offset channel input-group time-factor ))))
-(defn schedule-phrase [channel input-group phrase offset ]
-  (let [time-factor 1/8] 
+(defn schedule-phrase [channel input-group phrase offset base-offset ]
+  (let [time-factor 1/8
+        offset (+ base-offset offset)] 
     (srv/at (+ (time/now) (* 1000 time-factor offset)) 
             (play-phrase phrase offset channel input-group time-factor ))))
 
-
-(defn play-tune [] 
-  (let [{right-echo-bus     :right-echo-bus         
-         left-echo-bus      :left-echo-bus         
-         right-input-group  :right-input-group 
-         left-input-group   :left-input-group } @server-resources]
-
-    (schedule-phrase [[D4 16] [E4 8]] 80 right-echo-bus right-input-group)
-    (schedule-phrase [[B3 8] [G3 8] ] 186  right-echo-bus right-input-group)
-    (schedule-phrase [[G4 8] ] 376 right-echo-bus right-input-group)
-
-    (schedule-phrase [[C5 8] [D5 16]] 0 left-echo-bus left-input-group)
-    (schedule-phrase [[E4 8] ] 96 left-echo-bus left-input-group)
-    (schedule-phrase [[G4 8] ] 184 left-echo-bus left-input-group)
-    (schedule-phrase [[E5 6][G5 6][A5 6][G5 14]] 304 left-echo-bus left-input-group)
-    ))
-
-(defn setup [] 
-  (let [
-       {right-echo-bus     :right-echo-bus         
-         left-echo-bus      :left-echo-bus         
-         right-effect-group :right-effect-group 
-         left-effect-group  :left-effect-group } @server-resources 
-        ]
-    (echo [:tail right-effect-group] :dur 1 :input-bus right-echo-bus  :output-bus 1)
-    (echo [:tail left-effect-group] :dur 1 :input-bus left-echo-bus  :output-bus 0)) )
-(srv/sc-debug-on)
-(comment
-  (setup)
-  (doseq [it (range 1)]
-    (let [scheduler (Executors/newScheduledThreadPool 1)
-          tune (.scheduleAtFixedRate scheduler 
-                                     play-tune 
-                                     0 
-                                     (* 37 16 1/8) 
-                                     TimeUnit/SECONDS)] 
-      (.schedule scheduler ^Runnable #(.cancel tune true) (long (* 37 16 1/8 2)) TimeUnit/SECONDS)))
-  
-(doseq [it (range 2)] 
-   (srv/at (+ (time/now) (* it 1000  5)) 
-           (play-tune))) 
-  ) 
-
+;(srv/sc-debug-on)
 (defn discreet-music [] 
   (let    [
            right-echo-bus     (bus/audio-bus)
@@ -212,31 +112,16 @@
            left-player        (partial schedule-phrase left-echo-bus  left-input-group)
            _                  (echo [:tail right-effect-group] :dur 1 :input-bus right-echo-bus  :output-bus 1)
            _                  (echo [:tail left-effect-group] :dur 1 :input-bus left-echo-bus  :output-bus 0)    
-           play-tune          #((do (dorun (map (fn [[phrase offset]] (right-player phrase offset)) right-phrase))
-                                    (dorun (map (fn [[phrase offset]] (left-player phrase offset)) left-phrase))))
-           scheduler          (Executors/newScheduledThreadPool 1)
-           tune               (.scheduleAtFixedRate scheduler 
-                                                    play-tune 
-                                                    0 
-                                                    (* 37 16 1/8) 
-                                                    TimeUnit/SECONDS) 
-           stop-and-clean     (fn [] (do (.cancel tune true)
-                                         (bus/free-bus right-echo-bus)
-                                         (bus/free-bus left-echo-bus)
-                                         (n/node-free right-effect-group)
-                                         (n/node-free left-effect-group)
-                                         (n/node-free right-effect-group)
-                                         (n/node-free left-input-group)
-                                         (n/node-free main-group)))
+           play-tune          #(doseq [it (range 3)] 
+                                    (dorun (map (fn [[phrase offset]] (right-player phrase offset (* it 37 16))) right-phrase))
+                                    (dorun (map (fn [[phrase offset]] (left-player phrase offset (* it 37 16))) left-phrase)))
            ] 
-       (.schedule scheduler ^Runnable stop-and-clean (long (* 37 16 1/8 2)) TimeUnit/SECONDS)))
+       (play-tune)))
 
 (comment 
   (discreet-music)
 )
-(comment 
-  (play-tune)
-)
+
 (comment 
   (srv/stop)
   (app/reset-server-connection)
